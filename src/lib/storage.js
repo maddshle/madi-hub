@@ -31,30 +31,33 @@ const DEFAULT_TOOLS = [
   }
 ];
 
-// Unified data fetching layer supporting Supabase with LocalStorage fallback
-export async function getTools() {
+export async function getTools(includeHidden = false) {
   if (isDatabaseConfigured) {
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('tools')
         .select('*')
         .order('is_featured', { ascending: false })
         .order('created_at', { ascending: false });
 
+      if (!includeHidden) {
+        query = query.eq('is_visible', true);
+      }
+
+      const { data, error } = await query;
       if (!error && data) return data;
-      console.warn('Supabase query warning, falling back to local storage:', error);
     } catch (err) {
       console.error('Supabase connection error:', err);
     }
   }
 
-  // Fallback to localStorage
   const local = localStorage.getItem(LOCAL_STORAGE_KEY);
   if (!local) {
     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(DEFAULT_TOOLS));
-    return DEFAULT_TOOLS;
+    return includeHidden ? DEFAULT_TOOLS : DEFAULT_TOOLS.filter(t => t.is_visible);
   }
-  return JSON.parse(local);
+  const parsed = JSON.parse(local);
+  return includeHidden ? parsed : parsed.filter(t => t.is_visible);
 }
 
 export async function saveTool(tool) {
@@ -87,7 +90,6 @@ export async function saveTool(tool) {
     }
   }
 
-  // LocalStorage sync
   const current = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEY) || '[]');
   let updated;
   if (tool.id) {
@@ -118,7 +120,6 @@ export async function bulkInsertTools(toolsList) {
     if (!error) return data;
   }
 
-  // LocalStorage fallback merge
   const current = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEY) || '[]');
   const existingUrls = new Set(current.map(t => t.url));
   const newItems = toolsList
